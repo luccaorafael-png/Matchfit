@@ -1,0 +1,22 @@
+# Dependências
+/node_modules
+
+# Build do Next.js
+/.next/
+/out/
+
+# Variáveis de ambiente — NUNCA suba isso pro Git, tem chave secreta do
+# Stripe e do Supabase aqui dentro.
+.env
+.env.local
+.env*.local
+
+# Capacitor / Android — gerado localmente, específico da sua máquina
+/android
+/ios
+
+# Diversos
+.DS_Store
+*.pem
+npm-debug.log*
+.vercel
