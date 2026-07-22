@@ -21,3 +21,19 @@ export default function RootLayout({
     </html>
   );
 }
+import { Analytics } from '@vercel/analytics/react';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="pt-BR">
+      <body>
+        {children}
+        <Analytics /> {/* <--- Adicione aqui */}
+      </body>
+    </html>
+  );
+}
