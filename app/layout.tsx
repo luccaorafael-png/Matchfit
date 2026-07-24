@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/react";import type { Metadata } from "next";
 import "./globals.css";
 import { UserProvider } from "@/lib/session";
 
@@ -17,6 +17,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body>
         <UserProvider>{children}</UserProvider>
+          <Analytics/>
       </body>
     </html>
   );
