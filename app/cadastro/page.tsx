@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { UserRole, TrainingMode } from "@/lib/data";
 import { createClient } from "@/lib/supabase/client";
 import { CREF_REGIONS } from "@/lib/cref";
+import { isAllowedEmailDomain } from "@/lib/email-validation";
 
 export default function Cadastro() {
   const router = useRouter();
@@ -26,6 +27,14 @@ export default function Cadastro() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (!isAllowedEmailDomain(email)) {
+      setError(
+        "Use um e-mail de um provedor conhecido (Gmail, Outlook, Yahoo, iCloud, etc). E-mails temporários ou de domínios desconhecidos não são aceitos."
+      );
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -137,8 +146,11 @@ export default function Cadastro() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="voce@email.com"
-          className="w-full bg-ink text-chalk border border-chalk/20 rounded-lg px-4 py-2 mb-4 outline-none focus:border-coral"
+          className="w-full bg-ink text-chalk border border-chalk/20 rounded-lg px-4 py-2 mb-1 outline-none focus:border-coral"
         />
+        <p className="text-xs text-chalk/40 mb-4">
+          Gmail, Outlook, Yahoo, iCloud, etc. — sem e-mails temporários.
+        </p>
 
         <label className="block text-sm text-chalk/70 mb-1">Senha</label>
         <input

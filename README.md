@@ -485,6 +485,29 @@ Rode `migration_15_cref_region.sql`.
   - Depois de verificado, aparece um selo "✓ CREF verificado" no cartão
     do treinador pro cliente ver
 
+## Atualização: origem corrigida de vez + restrição de e-mail
+
+- **Corrigido de vez — "Origem não permitida"**: a causa raiz era que
+  `VERCEL_URL` reflete a URL específica de cada deploy (com um hash único),
+  não o domínio "bonito" que você realmente usa. Troquei a lógica: agora
+  compara o Origin da requisição com o Host dela mesma, sem depender de
+  nenhuma variável de ambiente — não tem mais como isso ficar
+  desatualizado.
+- **E-mails restritos a provedores conhecidos**: cadastro agora só aceita
+  e-mails de uma lista de provedores reais (Gmail, Outlook, Yahoo, iCloud,
+  UOL, etc. — lista completa em `lib/email-validation.ts`, fácil de
+  editar se quiser adicionar algum). Bloqueia e-mails temporários e
+  domínios inventados.
+  - **Limitação importante**: essa checagem é só no front-end. Alguém
+    tecnicamente decidido consegue contornar abrindo o DevTools e chamando
+    o Supabase direto. Pra fechar de vez (reforço no servidor), o
+    Supabase tem um recurso de "Auth Hooks" (Authentication > Hooks >
+    "Before user created") que roda uma função no banco antes de
+    qualquer cadastro — dá pra bloquear lá também. Não implementei isso
+    ainda porque a configuração exata varia de painel pra painel; se
+    quiser, no próximo patch eu escrevo a função SQL e te guio pra
+    ativar o hook.
+
 ## Próximas fases
 
 1. Publicar o site (Vercel) — desbloqueia o Capacitor/Play Store de verdade

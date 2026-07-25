@@ -1,6 +1,7 @@
-import { Analytics } from "@vercel/analytics/react";import type { Metadata } from "next";
+import type { Metadata } from "next";
 import "./globals.css";
 import { UserProvider } from "@/lib/session";
+import { Analytics } from "@vercel/analytics/react";
 
 export const metadata: Metadata = {
   title: "Match Fit — Ache seu personal trainer ou seu próximo cliente",
@@ -17,7 +18,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body>
         <UserProvider>{children}</UserProvider>
-          <Analytics/>
+        <Analytics />
       </body>
     </html>
   );

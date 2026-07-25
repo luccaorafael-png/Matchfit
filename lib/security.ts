@@ -13,6 +13,12 @@ export function getSiteUrl(): string {
 // pessoa (CSRF). Os cookies de sessão do Supabase já usam SameSite=Lax
 // (o navegador já bloqueia isso na maioria dos casos), mas essa é uma
 // segunda camada barata pras rotas que mexem com dinheiro ou conta.
+//
+// Compara o Origin da requisição com o Host dela mesma — ou seja,
+// "isso está sendo enviado pro mesmo domínio de onde saiu?". Isso é mais
+// confiável do que tentar adivinhar a URL "certa" via variável de
+// ambiente (VERCEL_URL, por exemplo, reflete o deploy específico com um
+// hash único, não o domínio "bonito" que a pessoa realmente usa).
 export function isSameOrigin(request: Request): boolean {
   const origin = request.headers.get("origin");
 
@@ -21,29 +27,11 @@ export function isSameOrigin(request: Request): boolean {
   // (assinatura do webhook), então isso não se aplica a elas.
   if (!origin) return true;
 
-  const allowedHosts = new Set<string>();
-
-  if (process.env.NEXT_PUBLIC_SITE_URL) {
-    try {
-      allowedHosts.add(new URL(process.env.NEXT_PUBLIC_SITE_URL).host);
-    } catch {
-      // valor inválido em NEXT_PUBLIC_SITE_URL — ignora e segue com o resto
-    }
-  }
-
-  // A Vercel preenche isso sozinha em cada deploy (produção ou preview),
-  // então isso funciona mesmo se NEXT_PUBLIC_SITE_URL não tiver sido
-  // atualizada ainda pra URL certa.
-  if (process.env.VERCEL_URL) {
-    allowedHosts.add(process.env.VERCEL_URL);
-  }
-
-  // Nenhuma das duas configuradas (ex: rodando local sem nada definido) —
-  // não dá pra comparar, então não bloqueia.
-  if (allowedHosts.size === 0) return true;
+  const host = request.headers.get("host");
+  if (!host) return true; // não deveria acontecer, mas não bloqueia à toa
 
   try {
-    return allowedHosts.has(new URL(origin).host);
+    return new URL(origin).host === host;
   } catch {
     return false;
   }
