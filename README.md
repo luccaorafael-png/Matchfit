@@ -508,6 +508,26 @@ Rode `migration_15_cref_region.sql`.
     quiser, no próximo patch eu escrevo a função SQL e te guio pra
     ativar o hook.
 
+## Atualização: confirmação de e-mail + robustez do painel de admin
+
+- **⚠️ Se o cadastro ainda aceita e-mails tipo `teste@example.com`**: o
+  código que bloqueia isso já existe e testei — funciona. Se ainda estiver
+  passando no seu site publicado, é sinal de que essa versão do código
+  ainda não chegou na Vercel. Copie os arquivos desse zip por cima do seu
+  projeto local, depois `git add . && git commit -m "atualização" &&
+  git push` — a Vercel redeploya sozinha ao detectar o push.
+- **Tela de confirmação de e-mail** (`/confirme-email`): pra isso
+  funcionar de verdade (a pessoa realmente precisar clicar num link antes
+  de usar a conta), ative em **Authentication > Providers > Email >
+  "Confirm email"** no painel do Supabase. Com isso ligado, depois do
+  cadastro a pessoa cai nessa tela em vez de ir direto pro app, com botão
+  de reenviar o e-mail se precisar.
+- **Rotas de admin mais robustas**: adicionei tratamento de erro que
+  faltava em todas as rotas de `/api/admin/*` — antes, se a
+  `SUPABASE_SERVICE_ROLE_KEY` estivesse faltando/errada na Vercel, a rota
+  quebrava com um erro genérico do servidor em vez de mostrar o problema
+  real. Agora sempre aparece uma mensagem clara.
+
 ## Próximas fases
 
 1. Publicar o site (Vercel) — desbloqueia o Capacitor/Play Store de verdade

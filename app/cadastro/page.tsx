@@ -50,10 +50,7 @@ export default function Cadastro() {
       }
 
       if (!data.session) {
-        setError(
-          "Conta criada! Falta confirmar por e-mail antes de continuar — veja sua caixa de entrada. (Se preferir pular isso em testes, desative \"Confirm email\" em Authentication > Providers > Email no Supabase e cadastre-se de novo.)"
-        );
-        setSubmitting(false);
+        window.location.href = `/confirme-email?email=${encodeURIComponent(email)}`;
         return;
       }
 
