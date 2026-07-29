@@ -5,19 +5,6 @@ const nextConfig = {
   poweredByHeader: false,
 
   async headers() {
-    const isDev = process.env.NODE_ENV !== "production";
-
-    // Em desenvolvimento, o Next.js usa eval() e um WebSocket pro Fast
-    // Refresh (hot reload) funcionar — sem isso, o JavaScript inteiro da
-    // página quebra silenciosamente. Em produção isso não é necessário,
-    // então mantemos o CSP restrito só lá.
-    const scriptSrc = isDev
-      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-      : "script-src 'self' 'unsafe-inline'";
-    const connectSrc = isDev
-      ? "connect-src 'self' ws: https://*.supabase.co wss://*.supabase.co https://nominatim.openstreetmap.org https://api.stripe.com"
-      : "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://nominatim.openstreetmap.org https://api.stripe.com";
-
     return [
       {
         source: "/:path*",
@@ -43,26 +30,16 @@ const nextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
-          // Restringe de onde o navegador pode carregar script, imagem,
-          // fonte e conexão — reduz bastante o estrago possível de um
-          // ataque de XSS, mesmo que um dia role algum. 'unsafe-inline'
-          // em script-src é uma concessão prática do Next.js (App Router
-          // injeta alguns scripts inline pra hidratação); o ideal a longo
-          // prazo é migrar pra CSP com nonce, mas isso já cobre bastante.
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              scriptSrc,
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com",
-              "img-src 'self' data: blob: https://*.supabase.co",
-              connectSrc,
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join("; "),
-          },
+          // Novo: impede que outra janela/aba controlada por outro site
+          // consiga referenciar essa página via window.opener.
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          // Novo: só permite que recursos dessa página (imagens, etc)
+          // sejam carregados por requisições do mesmo site.
+          { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+
+          // O Content-Security-Policy NÃO fica mais aqui — ele precisa
+          // de um código novo (nonce) a cada requisição, o que só dá pra
+          // gerar no middleware.ts, não aqui (esses headers são fixos).
         ],
       },
     ];
