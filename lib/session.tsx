@@ -8,7 +8,7 @@ import {
   ReactNode,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { UserRole, TrainingMode } from "./data";
+import { TrainingMode, UserRole } from "./data";
 
 export type UserProfile = {
   id: string;
@@ -53,6 +53,51 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  async function tryCompleteSignup(userId: string): Promise<boolean> {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    const meta = authUser?.user_metadata as Record<string, any> | undefined;
+
+    if (!meta?.name || !meta?.role) return false;
+
+    const { error: createError } = await supabase.from("profiles").insert({
+      id: userId,
+      name: meta.name,
+      role: meta.role,
+      preferred_mode: meta.preferred_mode ?? "ambos",
+    });
+
+    if (createError) {
+      console.error("[session] erro ao completar cadastro:", createError);
+      return false;
+    }
+
+    const modesArray: TrainingMode[] =
+      meta.preferred_mode === "ambos"
+        ? ["presencial", "online"]
+        : [meta.preferred_mode ?? "presencial"];
+
+    if (meta.role === "personal") {
+      await supabase.from("trainer_profiles").insert({
+        user_id: userId,
+        specialty: meta.specialty ?? "",
+        price_per_session: meta.price_per_session ?? 0,
+        cref_number: meta.cref_number ?? null,
+        cref_region: meta.cref_region ?? null,
+        modes: modesArray,
+      });
+    } else {
+      await supabase.from("client_profiles").insert({
+        user_id: userId,
+        goal: meta.goal ?? "",
+        modes: modesArray,
+      });
+    }
+
+    return true;
+  }
+
   async function loadProfile(userId: string) {
     try {
       const { data, error: fetchError } = await supabase
@@ -64,60 +109,60 @@ export function UserProvider({ children }: { children: ReactNode }) {
       if (fetchError) {
         console.error("[session] erro ao buscar perfil:", fetchError);
         setError(fetchError.message);
-      } else if (!data) {
-        // Conta existe no login (auth.users) mas não tem linha em
-        // profiles — normalmente sobra de um cadastro antigo que falhou
-        // no meio do caminho, ou de um teste em que só a linha de
-        // profiles foi apagada manualmente. Encerra a sessão com uma
-        // mensagem clara em vez do erro cru do Postgres.
+        return;
+      }
+
+      if (!data) {
+        const completed = await tryCompleteSignup(userId);
+
+        if (completed) {
+          const { data: freshData, error: refetchError } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", userId)
+            .maybeSingle();
+
+          if (!refetchError && freshData) {
+            setUser(mapRow(freshData));
+            setError(null);
+            return;
+          }
+        }
+
         await supabase.auth.signOut();
         setUser(null);
         setError(
           "Não encontramos um perfil pra essa conta. Se você apagou dados de teste manualmente, o mais simples é apagar essa conta em Authentication > Users no Supabase e se cadastrar de novo."
         );
-      } else {
-        if (data.banned) {
-          // Conta banida — encerra a sessão na hora, não deixa navegar.
-          await supabase.auth.signOut();
-          setUser(null);
-          setError(
-            "Sua conta foi suspensa. Se acha que isso é um engano, entre em contato com o suporte."
-          );
-        } else {
-          setUser(mapRow(data));
-          setError(null);
-        }
+        return;
       }
-    } catch (e: any) {
-      // Cai aqui se a chamada nem chegou a responder (URL/chave do Supabase
-      // erradas no .env.local, sem internet, projeto pausado, etc.)
-      console.error("[session] falha de conexão ao buscar perfil:", e);
-      setError(
-        "Não foi possível conectar ao Supabase. Confira o .env.local e se o projeto está ativo."
-      );
+
+      if (data.banned) {
+        await supabase.auth.signOut();
+        setUser(null);
+        setError(
+          "Sua conta foi suspensa. Se acha que isso é um engano, entre em contato com o suporte."
+        );
+      } else {
+        setUser(mapRow(data));
+        setError(null);
+      }
+    } catch (err: any) {
+      console.error("[session] erro inesperado:", err);
+      setError(err?.message ?? "Erro inesperado ao carregar sessão.");
     } finally {
-      // Isso SEMPRE roda, então a tela nunca fica travada em "Carregando..."
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
-        if (session?.user) {
-          loadProfile(session.user.id);
-        } else {
-          setLoading(false);
-        }
-      })
-      .catch((e) => {
-        console.error("[session] falha ao obter sessão:", e);
-        setError(
-          "Não foi possível conectar ao Supabase. Confira o .env.local e se o projeto está ativo."
-        );
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadProfile(session.user.id);
+      } else {
         setLoading(false);
-      });
+      }
+    });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -127,10 +172,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
 
         if (event === "SIGNED_OUT") {
-          // Confere de novo antes de aceitar — o Supabase às vezes dispara
-          // esse evento por uma corrida na renovação do token (comum com
-          // várias abas abertas ou conexões em tempo real simultâneas),
-          // sem o usuário ter saído de verdade.
           supabase.auth.getSession().then(({ data: { session: recheck } }) => {
             if (recheck?.user) {
               loadProfile(recheck.user.id);
@@ -147,7 +188,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      listener.subscription.unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -155,11 +198,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     const patch: Record<string, any> = {};
     if (partial.name !== undefined) patch.name = partial.name;
-    if (partial.role !== undefined) patch.role = partial.role;
     if (partial.preferredMode !== undefined)
       patch.preferred_mode = partial.preferredMode;
-    if (partial.subscriptionActive !== undefined)
-      patch.subscription_active = partial.subscriptionActive;
     if (partial.avatarUrl !== undefined) patch.avatar_url = partial.avatarUrl;
     if (partial.locationLat !== undefined)
       patch.location_lat = partial.locationLat;
@@ -173,9 +213,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     if (updateError) {
       console.error("[session] erro ao atualizar perfil:", updateError);
-      setError(updateError.message);
       return;
     }
+
     setUser({ ...user, ...partial });
   }
 
@@ -205,5 +245,3 @@ export function useSession() {
   }
   return ctx;
 }
-
-export type { UserRole, TrainingMode };

@@ -45,10 +45,8 @@ export default function Termos() {
             profissional (CREF) válido e regular
           </li>
           <li>
-            Não verificamos automaticamente a formação ou aptidão física de
-            clientes nem a qualificação de treinadores além da checagem
-            manual de CREF — a responsabilidade pela avaliação de aptidão
-            física antes de iniciar qualquer atividade é de cada usuário
+            A responsabilidade pela avaliação de aptidão física antes de
+            iniciar qualquer atividade é de cada usuário
           </li>
         </ul>
 
@@ -56,7 +54,7 @@ export default function Termos() {
           3. Assinatura e pagamento
         </h2>
         <p>
-          O acesso a recursos de contato (curtir, dar match e conversar)
+          O acesso a recursos de contato (enviar solicitação e conversar)
           depende de assinatura paga, processada pelo Stripe. A assinatura
           é recorrente e pode ser cancelada a qualquer momento pelo Portal
           de Cobrança, disponível na tela de planos. Não fazemos reembolso

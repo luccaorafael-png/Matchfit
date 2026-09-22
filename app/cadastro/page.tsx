@@ -39,9 +39,21 @@ export default function Cadastro() {
 
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+  email,
+  password,
+  options: {
+    data: {
+      name,
+      role,
+      preferred_mode: mode,
+      specialty: role === "personal" ? specialty : null,
+      price_per_session: role === "personal" ? price : null,
+      cref_number: role === "personal" ? crefNumber : null,
+      cref_region: role === "personal" ? crefRegion : null,
+      goal: role === "cliente" ? goal : null,
+    },
+  },
+});
 
       if (signUpError || !data.user) {
         setError(signUpError?.message ?? "Não foi possível criar a conta.");

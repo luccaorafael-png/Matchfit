@@ -15,8 +15,9 @@ export type Result<T> = {
 
 export type ViewerLocation = { lat: number; lng: number } | null;
 
-// Busca treinadores (visão do cliente), excluindo quem o usuário já deu
-// swipe, filtrando por modalidade/especialidade/preço/distância real.
+// Busca treinadores (visão do cliente) — exclui quem já recebeu
+// solicitação (pendente, aceita ou recusada), filtra por
+// modalidade/especialidade/preço/distância real.
 export async function fetchTrainersForClient(
   supabase: SupabaseClient,
   currentUserId: string,
@@ -25,15 +26,15 @@ export async function fetchTrainersForClient(
   viewerLocation: ViewerLocation
 ): Promise<Result<Trainer[]>> {
   const { data: seen, error: seenError } = await supabase
-    .from("swipes")
-    .select("to_user")
-    .eq("from_user", currentUserId);
+    .from("contact_requests")
+    .select("trainer_id")
+    .eq("client_id", currentUserId);
 
   if (seenError) {
-    console.error("[fetchTrainersForClient] erro ao buscar swipes:", seenError);
+    console.error("[fetchTrainersForClient] erro ao buscar solicitações:", seenError);
     return { data: [], error: seenError.message };
   }
-  const seenIds = (seen ?? []).map((s: any) => s.to_user);
+  const seenIds = (seen ?? []).map((s: any) => s.trainer_id);
 
   let query = supabase
     .from("trainer_profiles")
@@ -78,9 +79,6 @@ export async function fetchTrainersForClient(
     };
   });
 
-  // Só filtra por distância se o próprio usuário já tiver definido a
-  // localização — sem isso, não dá pra saber o quão longe alguém está,
-  // então mostramos todo mundo em vez de esconder por engano.
   if (mode === "presencial" && viewerLocation) {
     trainers = trainers.filter(
       (t) => t.distanceKm === undefined || t.distanceKm <= filters.maxDistance
@@ -90,149 +88,138 @@ export async function fetchTrainersForClient(
   return { data: trainers, error: null };
 }
 
-// Busca clientes (visão do personal trainer), mesma lógica de exclusão.
-export async function fetchClientsForTrainer(
+// Envia uma solicitação de contato do cliente pro treinador (equivalente
+// ao antigo "curtir", mas sem precisar de reciprocidade — o treinador que
+// decide aceitar ou recusar).
+export async function sendContactRequest(
   supabase: SupabaseClient,
-  currentUserId: string,
-  mode: TrainingMode,
-  viewerLocation: ViewerLocation,
-  maxDistance: number
-): Promise<Result<Client[]>> {
-  const { data: seen, error: seenError } = await supabase
-    .from("swipes")
-    .select("to_user")
-    .eq("from_user", currentUserId);
+  clientId: string,
+  trainerId: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("contact_requests").insert({
+    client_id: clientId,
+    trainer_id: trainerId,
+    status: "pending",
+  });
 
-  if (seenError) {
-    console.error("[fetchClientsForTrainer] erro ao buscar swipes:", seenError);
-    return { data: [], error: seenError.message };
-  }
-  const seenIds = (seen ?? []).map((s: any) => s.to_user);
-
-  let query = supabase
-    .from("client_profiles")
-    .select(
-      "user_id, goal, modes, profiles!inner(name, avatar_url, location_lat, location_lng)"
-    )
-    .contains("modes", [mode]);
-
-  if (seenIds.length > 0) {
-    query = query.not("user_id", "in", `(${seenIds.join(",")})`);
-  }
-
-  const { data, error } = await query;
   if (error) {
-    console.error("[fetchClientsForTrainer] erro na busca:", error);
+    console.error("[sendContactRequest] erro:", error);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+export type PendingRequest = {
+  id: string;
+  clientId: string;
+  clientName: string;
+  clientAvatarUrl: string | null;
+  clientGoal: string;
+  createdAt: string;
+};
+
+// Busca as solicitações pendentes recebidas por um treinador.
+export async function fetchPendingRequestsForTrainer(
+  supabase: SupabaseClient,
+  trainerId: string
+): Promise<Result<PendingRequest[]>> {
+  const { data, error } = await supabase
+    .from("contact_requests")
+    .select(
+      "id, client_id, created_at, profiles!contact_requests_client_id_fkey(name, avatar_url), client_profiles!inner(goal)"
+    )
+    .eq("trainer_id", trainerId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[fetchPendingRequestsForTrainer] erro:", error);
     return { data: [], error: error.message };
   }
 
-  let clients: Client[] = (data ?? []).map((row: any) => {
-    const cLat = row.profiles?.location_lat;
-    const cLng = row.profiles?.location_lng;
-    const distanceKm =
-      mode === "presencial" && viewerLocation && cLat != null && cLng != null
-        ? haversineKm(viewerLocation.lat, viewerLocation.lng, cLat, cLng)
-        : undefined;
+  const requests: PendingRequest[] = (data ?? []).map((row: any) => ({
+    id: row.id,
+    clientId: row.client_id,
+    clientName: row.profiles?.name ?? "Cliente",
+    clientAvatarUrl: row.profiles?.avatar_url ?? null,
+    clientGoal: row.client_profiles?.goal ?? "",
+    createdAt: row.created_at,
+  }));
 
-    return {
-      id: row.user_id,
-      name: row.profiles?.name ?? "Cliente",
-      goal: row.goal ?? "",
-      modes: row.modes,
-      bio: row.goal ?? "",
-      avatarUrl: row.profiles?.avatar_url ?? null,
-      distanceKm,
-    };
-  });
-
-  if (mode === "presencial" && viewerLocation) {
-    clients = clients.filter(
-      (c) => c.distanceKm === undefined || c.distanceKm <= maxDistance
-    );
-  }
-
-  return { data: clients, error: null };
+  return { data: requests, error: null };
 }
 
-// Registra o swipe e retorna o id do match se virou match mútuo. Em vez de
-// só checar se JÁ existe uma linha em "matches" (o que pode pegar um match
-// antigo de um teste anterior), confirmamos a mutualidade direto nos swipes
-// atuais — só assim garantimos que o match é realmente fresco.
-export async function registerSwipe(
+// Treinador aceita ou recusa uma solicitação. Ao aceitar, o banco cria o
+// match sozinho (trigger create_match_on_request_accepted).
+export async function respondToRequest(
   supabase: SupabaseClient,
-  fromUser: string,
-  toUser: string,
-  liked: boolean
-): Promise<{ matchId: string | null; error: string | null }> {
-  const { error: swipeError } = await supabase
-    .from("swipes")
-    .upsert(
-      { from_user: fromUser, to_user: toUser, liked },
-      { onConflict: "from_user,to_user" }
-    );
-
-  if (swipeError) {
-    console.error("[registerSwipe] erro ao gravar swipe:", swipeError);
-    return { matchId: null, error: swipeError.message };
-  }
-
-  if (!liked) return { matchId: null, error: null };
-
-  // Confere se virou match checando a tabela "matches" — que o trigger do
-  // banco já cria sozinho quando os dois lados curtem. Não dá pra checar
-  // isso lendo o swipe da OUTRA pessoa direto (from_user = toUser), porque
-  // a política de segurança só deixa cada um ler os próprios swipes — essa
-  // consulta sempre voltaria vazia mesmo quando o match é real.
-  const { data, error } = await supabase
-    .from("matches")
-    .select("id")
-    .or(
-      `and(client_id.eq.${fromUser},trainer_id.eq.${toUser}),and(client_id.eq.${toUser},trainer_id.eq.${fromUser})`
-    )
-    .limit(1);
+  requestId: string,
+  status: "accepted" | "declined"
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("contact_requests")
+    .update({ status, responded_at: new Date().toISOString() })
+    .eq("id", requestId);
 
   if (error) {
-    console.error("[registerSwipe] erro ao conferir match:", error);
-    return { matchId: null, error: error.message };
+    console.error("[respondToRequest] erro:", error);
+    return { error: error.message };
   }
+  return { error: null };
+}
 
-  return { matchId: data && data.length > 0 ? data[0].id : null, error: null };
+// Limpa as solicitações que o cliente já enviou — útil em teste, quando
+// os perfis somem porque você já mandou solicitação pra todo mundo
+// disponível.
+export async function resetMyRequests(
+  supabase: SupabaseClient,
+  clientId: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("contact_requests")
+    .delete()
+    .eq("client_id", clientId);
+
+  if (error) {
+    console.error("[resetMyRequests] erro:", error);
+    return { error: error.message };
+  }
+  return { error: null };
 }
 
 export type MatchSummary = {
   matchId: string;
   otherUserId: string;
   otherUserName: string;
-  createdAt: string;
 };
 
-// Lista todos os matches do usuário logado, dos dois lados (seja ele
-// cliente ou personal trainer), com o nome de quem está do outro lado.
+// Lista os matches (conexões aceitas) do usuário atual, com o nome da
+// outra pessoa já resolvido.
 export async function fetchMatchesForUser(
   supabase: SupabaseClient,
-  userId: string
+  currentUserId: string
 ): Promise<Result<MatchSummary[]>> {
   const { data, error } = await supabase
     .from("matches")
     .select(
-      "id, created_at, client_id, trainer_id, client:client_id(name), trainer:trainer_id(name)"
+      "id, client_id, trainer_id, client:profiles!matches_client_id_fkey(name), trainer:profiles!matches_trainer_id_fkey(name)"
     )
-    .or(`client_id.eq.${userId},trainer_id.eq.${userId}`)
+    .or(`client_id.eq.${currentUserId},trainer_id.eq.${currentUserId}`)
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("[fetchMatchesForUser] erro na busca:", error);
+    console.error("[fetchMatchesForUser] erro:", error);
     return { data: [], error: error.message };
   }
 
-  const matches: MatchSummary[] = (data ?? []).map((row: any) => {
-    const isClient = row.client_id === userId;
+  const matches = (data ?? []).map((row: any) => {
+    const isClient = row.client_id === currentUserId;
     return {
       matchId: row.id,
       otherUserId: isClient ? row.trainer_id : row.client_id,
-      otherUserName:
-        (isClient ? row.trainer?.name : row.client?.name) ?? "Usuário",
-      createdAt: row.created_at,
+      otherUserName: isClient
+        ? row.trainer?.name ?? "Treinador"
+        : row.client?.name ?? "Cliente",
     };
   });
 
@@ -258,11 +245,11 @@ export async function fetchMessages(
     .order("created_at", { ascending: true });
 
   if (error) {
-    console.error("[fetchMessages] erro na busca:", error);
+    console.error("[fetchMessages] erro:", error);
     return { data: [], error: error.message };
   }
 
-  const messages: ChatMessage[] = (data ?? []).map((row: any) => ({
+  const messages = (data ?? []).map((row: any) => ({
     id: row.id,
     matchId: row.match_id,
     senderId: row.sender_id,
@@ -290,36 +277,6 @@ export async function sendMessage(
   return { error: null };
 }
 
-// Apaga todos os swipes (likes e passes) E matches que o usuário tem —
-// útil em teste, quando um match antigo "reaparece" numa curtida nova
-// porque o registro de match anterior nunca foi removido.
-export async function resetMySwipes(
-  supabase: SupabaseClient,
-  userId: string
-): Promise<{ error: string | null }> {
-  const { error: swipesError } = await supabase
-    .from("swipes")
-    .delete()
-    .eq("from_user", userId);
-
-  if (swipesError) {
-    console.error("[resetMySwipes] erro ao limpar swipes:", swipesError);
-    return { error: swipesError.message };
-  }
-
-  const { error: matchesError } = await supabase
-    .from("matches")
-    .delete()
-    .or(`client_id.eq.${userId},trainer_id.eq.${userId}`);
-
-  if (matchesError) {
-    console.error("[resetMySwipes] erro ao limpar matches:", matchesError);
-    return { error: matchesError.message };
-  }
-
-  return { error: null };
-}
-
 export type SessionProposal = {
   id: string;
   matchId: string;
@@ -328,7 +285,7 @@ export type SessionProposal = {
   status: "pending" | "confirmed" | "declined" | "cancelled";
 };
 
-export async function fetchSessions(
+export async function fetchSessionsForMatch(
   supabase: SupabaseClient,
   matchId: string
 ): Promise<Result<SessionProposal[]>> {
@@ -339,31 +296,33 @@ export async function fetchSessions(
     .order("scheduled_at", { ascending: true });
 
   if (error) {
-    console.error("[fetchSessions] erro:", error);
+    console.error("[fetchSessionsForMatch] erro:", error);
     return { data: [], error: error.message };
   }
 
-  return {
-    data: (data ?? []).map((row: any) => ({
-      id: row.id,
-      matchId: row.match_id,
-      proposedBy: row.proposed_by,
-      scheduledAt: row.scheduled_at,
-      status: row.status,
-    })),
-    error: null,
-  };
+  const sessions = (data ?? []).map((row: any) => ({
+    id: row.id,
+    matchId: row.match_id,
+    proposedBy: row.proposed_by,
+    scheduledAt: row.scheduled_at,
+    status: row.status,
+  }));
+
+  return { data: sessions, error: null };
 }
 
 export async function proposeSession(
   supabase: SupabaseClient,
   matchId: string,
   proposedBy: string,
-  scheduledAt: string
+  scheduledAtISO: string
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from("sessions")
-    .insert({ match_id: matchId, proposed_by: proposedBy, scheduled_at: scheduledAt });
+  const { error } = await supabase.from("sessions").insert({
+    match_id: matchId,
+    proposed_by: proposedBy,
+    scheduled_at: scheduledAtISO,
+    status: "pending",
+  });
 
   if (error) {
     console.error("[proposeSession] erro:", error);

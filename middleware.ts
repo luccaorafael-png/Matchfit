@@ -12,12 +12,6 @@ const PROTECTED_ROUTES = [
 ];
 
 export async function middleware(request: NextRequest) {
-  // CSP sem nonce — voltamos atrás nisso porque o nonce automático do
-  // Next.js não estava cobrindo 100% dos scripts da página (o Vercel
-  // Analytics bloqueava especificamente), o que travava login/cadastro.
-  // 'unsafe-inline' em script-src é menos restrito, mas prioriza o site
-  // funcionando de verdade em vez de uma nota levemente melhor num
-  // scanner de segurança.
   const cspHeader = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",

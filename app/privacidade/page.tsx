@@ -55,7 +55,7 @@ export default function Privacidade() {
           <li>Conectar clientes e personal trainers compatíveis</li>
           <li>Calcular distância aproximada no modo presencial</li>
           <li>Processar assinaturas e pagamentos</li>
-          <li>Permitir comunicação entre usuários que deram match</li>
+          <li>Permitir comunicação entre usuários conectados</li>
           <li>Prevenir abuso, fraude e contas falsas</li>
         </ul>
 
