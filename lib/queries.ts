@@ -18,7 +18,7 @@ export type ViewerLocation = { lat: number; lng: number } | null;
 // Busca treinadores (visão do cliente) — exclui quem já recebeu
 // solicitação (pendente, aceita ou recusada), filtra por
 // modalidade/especialidade/preço/distância real.
-export async function fetchTrainersForClient(
+export async function fetchSessions(
   supabase: SupabaseClient,
   currentUserId: string,
   mode: TrainingMode,
